@@ -72,7 +72,7 @@ router.get(
 
       res.status(200).json({
         status: 200,
-        data: neighbours,
+        data: neighbours.data,
         message: `Retrieved neighbours successfully`,
       });
     } catch (error) {
