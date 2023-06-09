@@ -7,6 +7,7 @@ import { Result } from "../interfaces/result";
 import { CustomError } from "../middlewares/error";
 import * as hexagonalRepo from "../repositories/hexagonal";
 
+
 export const addHexagonal = async (data: ICreateHexagonal) => {
   try {
     // check if neighbor exists

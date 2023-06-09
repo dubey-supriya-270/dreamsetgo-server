@@ -93,34 +93,33 @@ export const fetchNeighbourOfHexagonal = async (
 
 export const deleteHexagonal = async (hexagonName: string): Promise<Result> => {
   try {
-    // Check if the hexagon exists
-    const hexagon = await db.oneOrNone(
-      "SELECT id FROM hexagons WHERE name = $1",
-      hexagonName
+    // Check if the hexagon is the only connecting hexagon between two hotspots
+    const neighborCountResult = await db.query(
+      'SELECT COUNT(*) FROM hexagons WHERE neighbor_name = $1',
+      [hexagonName]
     );
 
+    console.log("neighborCountResult",neighborCountResult)
 
-
-    if (!hexagon) {
-      return Result.error("Hexagon not found");
+    const neighborCount = parseInt(neighborCountResult.count, 10);
+    
+    if (neighborCount === 1) {
+      
+      return Result.error( 'Hexagon cannot be removed as it is the only connecting hexagon between two hotspots' );
     }
 
-    // Check if the hexagon is the only connection between two hotspots
-    const count = await db.one(
-      `SELECT COUNT(*) AS count FROM hexagonneighbors  
-          WHERE hexagon_id = $1 OR neighbor_hexagon_id = $1`,
-      [hexagon.id],
-      (data) => +data.count
+    // Remove the hexagon from the cluster
+    await db.query(
+      'DELETE FROM hexagons WHERE name = $1',
+      [hexagonName]
     );
 
-    if (count === 1) {
-      return Result.error(
-        "Hexagon cannot be removed as it is the only connection between two hotspots"
-      );
-    }
+    // Update the neighbor's record to remove the reference to the removed hexagon
+    await db.query(
+      'UPDATE hexagons SET neighbor_name = NULL WHERE neighbor_name = $1',
+      [hexagonName]
+    );
 
-    // Delete the hexagon from the table
-    await db.one("DELETE FROM hexagons WHERE id = $1", hexagon.id);
   
     return Result.ok("Delete hexagonal successfully");
   } catch (err) {
@@ -128,21 +127,4 @@ export const deleteHexagonal = async (hexagonName: string): Promise<Result> => {
   }
 };
 
-// find out the neighbors border which is connected to the hexagonal
-const neighborBorder = (borderNumber: number) => {
-  switch (borderNumber) {
-    case 0:
-      return 3;
-    case 1:
-      return 4;
 
-    case 2:
-      return 5;
-    case 3:
-      return 0;
-    case 4:
-      return 1;
-    case 5:
-      return 2;
-  }
-};
