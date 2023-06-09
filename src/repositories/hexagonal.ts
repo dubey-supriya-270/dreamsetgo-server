@@ -1,45 +1,53 @@
 import { Result } from "../interfaces/result";
 import { db } from "../db_init/dbConn";
-import { ICreateHexagonal, IHexagonalNeighbour } from "../interfaces/hexagonal";
+import {
+  ICreateHexagonal,
+  IHexagonalNeighbour,
+  IStoreHexagonal,
+} from "../interfaces/hexagonal";
+
+import format from "pg-format";
+
+export const getHexagonDetails = async (name: string): Promise<Result<any>> => {
+  try {
+    const hexagonDetails = await db.query(
+      `select id from hexagons where name = $1`,
+      [name]
+    );
+
+    return Result.ok(hexagonDetails);
+  } catch (error) {
+    return Result.error(error);
+  }
+};
+
+export const getHexagonNameByNeighbor = async (
+  neighbor_name: string,
+  border_number: number
+): Promise<Result<any>> => {
+  try {
+    const connectionDetails = await db.query(
+      `select name from hexagons where neighbor_name = $1 and border_number = $2`,
+      [neighbor_name, border_number]
+    );
+
+    return Result.ok(connectionDetails);
+  } catch (error) {
+    return Result.error(error);
+  }
+};
 
 export const addHexagonal = async (data: ICreateHexagonal): Promise<Result> => {
   try {
-    // check if neighbors exist or not
-    const hexagonNeighbor = await db.query(
-      `select id from hexagons where name = $1`,
-      [data.neighbour]
+    await db.query(
+      `insert into hexagons (name, neighbor_name, border_number) values ($1, $2,$3)`,
+      [data.name, data.neighbour, data.border]
     );
-
-    if (hexagonNeighbor.lenght === 0) {
-      return Result.error("Hexagonal neighbors not found");
-    }
-    // check if name already exists
-    const hexagonalName = await db.query(
-      `select id from hexagons where name = $1`,
-      [data.name]
-    );
-
-    if (hexagonalName.length === 0) {
-      const hexagonSql = await db.one(
-        `INSERT INTO hexagons (name) VALUES ($1) returning id`,
-        [data.name]
-      );
-      await db.one(
-        `INSERT INTO hexagonneighbors (hexagon_id, border_number, neighbor_hexagon_id) VALUES ($1, $2, $3) returning id`,
-        [
-          hexagonSql.id,
-          data.border,
-          data.neighbour !== "" ? hexagonNeighbor[0].id : null,
-        ]
-      );
-    } else {
-      await db.one(
-        `INSERT INTO hexagonneighbors (hexagon_id, border_number, neighbor_hexagon_id) VALUES ($1, $2,  $3) returning id `,
-        [
-          hexagonalName[0].id,
-          data.border,
-          data.neighbour !== "" ? hexagonNeighbor[0].id : null,
-        ]
+    if (data.neighbour !== "") {
+     
+      await db.query(
+        `insert into hexagons (name, neighbor_name, border_number) values ($1, $2,$3)`,
+        [data.neighbour, data.name, (+data.border + 3) % 6]
       );
     }
 
@@ -49,16 +57,31 @@ export const addHexagonal = async (data: ICreateHexagonal): Promise<Result> => {
   }
 };
 
+export const addMultipleHexagonal = async (
+  data: IStoreHexagonal[]
+): Promise<Result> => {
+  try {
+    let updatedArray = data.map((obj) => Object.values(obj));
+
+    let query1 = `INSERT INTO hexagons (name, neighbor_name, border_number) VALUES 
+      ${updatedArray
+        .map((val) => `('${val[0]}', '${val[1]}', ${val[2]})`)
+        .join(", ")} returning id`;
+
+    const result = await db.query(query1);
+
+    return Result.ok(result);
+  } catch (err) {
+    return Result.error(err);
+  }
+};
+
 export const fetchNeighbourOfHexagonal = async (
   name: string
 ): Promise<Result<IHexagonalNeighbour[]>> => {
   try {
     const result = await db.query(
-      `SELECT hn.border_number, h2.name
-      FROM hexagonneighbors AS hn
-      INNER JOIN hexagons AS h1 ON hn.hexagon_id = h1.id
-      INNER JOIN hexagons AS h2 ON hn.neighbor_hexagon_id = h2.id
-      WHERE h1.name = $1`,
+      `SELECT border_number, neighbor_name from hexagons WHERE name = $1`,
       [name]
     );
 
@@ -76,7 +99,7 @@ export const deleteHexagonal = async (hexagonName: string): Promise<Result> => {
       hexagonName
     );
 
-    console.log("hexagon",hexagon)
+
 
     if (!hexagon) {
       return Result.error("Hexagon not found");
@@ -90,8 +113,6 @@ export const deleteHexagonal = async (hexagonName: string): Promise<Result> => {
       (data) => +data.count
     );
 
-   
-
     if (count === 1) {
       return Result.error(
         "Hexagon cannot be removed as it is the only connection between two hotspots"
@@ -99,13 +120,29 @@ export const deleteHexagonal = async (hexagonName: string): Promise<Result> => {
     }
 
     // Delete the hexagon from the table
-    await db.one(
-      "DELETE FROM hexagons WHERE id = $1",
-      hexagon.id
-    );
-    console.log("count",count)
+    await db.one("DELETE FROM hexagons WHERE id = $1", hexagon.id);
+  
     return Result.ok("Delete hexagonal successfully");
   } catch (err) {
     return Result.error(`Error delete hexagonal  => ${err}`);
+  }
+};
+
+// find out the neighbors border which is connected to the hexagonal
+const neighborBorder = (borderNumber: number) => {
+  switch (borderNumber) {
+    case 0:
+      return 3;
+    case 1:
+      return 4;
+
+    case 2:
+      return 5;
+    case 3:
+      return 0;
+    case 4:
+      return 1;
+    case 5:
+      return 2;
   }
 };
